@@ -1,31 +1,49 @@
 import socket
-import pickle
+import select
+import errno
+import sys
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect((socket.gethostname(), 5050))
+HEADER = 10
+IP = "127.0.0.1"
+PORT = 5050
 
-HEADERSIZE = 10
+my_username = input("Username: ")
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client_socket.connect((IP,PORT))
+client_socket.setblocking(False)
 
-while True:
-    fullmessage = b""
-    newmessage = True
-    while True:
-        msg = s.recv(16)
-        if newmessage:
-            print(f"new message length: {msg[:HEADERSIZE]}")
-            msglen = int(msg[:HEADERSIZE])
-            newmessage = False
+username = my_username.encode('utf8')
+username_header = f"{len(username):<{HEADER}}".encode('utf8')
+client_socket.send(username_header + username)
 
-        fullmessage += msg
+run = True
+while run:
+    message = input(f"{my_username} > ")
+    if message:
+        message = message.encode('utf8')
+        message_header = f"{len(message):<{HEADER}}".encode('utf8')
+        client_socket.send(message_header + message)
 
-        if len(fullmessage) - HEADERSIZE == msglen:
-            print("full msg received")
-            print(fullmessage[HEADERSIZE:])
+    try:
+        while True:
+            # Receive Things
+            username_header = client_socket.recv(HEADER)
+            if not len(username_header):
+                print("connection closed by the server!!")
+                sys.exit()
+            username_length = int(username_header.decode('utf8').strip())
+            username = client_socket.recv(username_length).decode('utf8')
 
-            d = pickle.loads(fullmessage[HEADERSIZE:])
-            print(d)
+            message_header = client_socket.recv(HEADER)
+            message_length = int(message_header.decode('utf8').strip())
+            message = client_socket.recv(message_length).decode('utf8')
 
-
-            newmessage = True
-            fullmessage = b""
-    print(fullmessage)
+            print(f"{username} > {message}")
+    except IOError as e:
+        if e.errno != errno.EAGAIN and e.errno != errno.EWOULDBLOCK:
+            print("Reading Error",str(e))
+            sys.exit()
+        continue
+    except Exception as e:
+        print("General error", str(e))
+        sys.exit()
